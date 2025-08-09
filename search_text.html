@@ -3,14 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <title>Elenco Sedi</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
 <style>
     body {
         font-family: Arial, sans-serif;
         margin: 20px;
+        transition: background-color 0.3s, color 0.3s;
     }
     table {
         border-collapse: collapse;
         width: 100%;
+        margin-top: 10px;
     }
     th, td {
         border: 1px solid #ccc;
@@ -19,14 +23,79 @@
     }
     th {
         background-color: #eee;
+        cursor: pointer;
+    }
+    .pagination button {
+        padding: 5px 10px;
+        margin: 2px;
+    }
+    .dark-mode {
+        background-color: #121212;
+        color: white;
+    }
+    .dark-mode table {
+        border-color: #555;
+    }
+    .dark-mode th {
+        background-color: #333;
+    }
+    .dark-mode td, .dark-mode th {
+        border-color: #555;
+    }
+    .dark-mode button {
+        background-color: #444;
+        color: #fff;
+        border: 1px solid #666;
+    }
+    .tooltip {
+        position: relative;
+        display: inline-block;
+    }
+    .tooltip .tooltiptext {
+        visibility: hidden;
+        background-color: #333;
+        color: #fff;
+        text-align: center;
+        padding: 4px 8px;
+        border-radius: 4px;
+        position: absolute;
+        z-index: 1;
+        bottom: 125%;
+        left: 50%;
+        transform: translateX(-50%);
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-size: 12px;
+    }
+    .tooltip:hover .tooltiptext {
+        visibility: visible;
+        opacity: 1;
+    }
+    mark {
+        background-color: yellow;
+        color: black;
+    }
+    #dropZone {
+        border: 2px dashed #ccc;
+        padding: 10px;
+        margin-bottom: 10px;
+        text-align: center;
     }
 </style>
 </head>
-<body onload="loadCSV()">
+<body>
 <h2>Elenco Sedi</h2>
 
-<!-- Casella di ricerca -->
-<input type="text" id="searchBox" placeholder="🔍 Cerca..." style="margin-bottom:10px; padding:5px; width:200px;">
+<div id="dropZone">📂 Trascina qui il file CSV</div>
+
+<input type="file" id="fileInput" accept=".csv">
+<input type="text" id="searchBox" placeholder="🔍 Cerca..." style="margin-left:10px; padding:5px;">
+
+<div>
+    <button onclick="generatePDF()">📄 Esporta PDF</button>
+    <button onclick="exportCSV()">📑 Esporta CSV</button>
+    <button onclick="toggleDarkMode()">🌙/☀️ Tema</button>
+</div>
 
 <table id="dataTable">
     <thead>
@@ -39,38 +108,159 @@
             <th>Note</th>
         </tr>
     </thead>
-    <tbody>
-        <!-- Riempito dinamicamente -->
-    </tbody>
+    <tbody></tbody>
 </table>
+<div class="pagination"></div>
 
 <script>
-function loadCSV() {
-    fetch("dati.csv")
-        .then(response => response.text())
-        .then(text => {
-            const rows = text.trim().split("\n").map(r => r.split(";"));
-            const tbody = document.querySelector("#dataTable tbody");
-            tbody.innerHTML = "";
-            rows.slice(1).forEach(row => {
-                const tr = document.createElement("tr");
-                row.forEach(cell => {
-                    const td = document.createElement("td");
-                    td.textContent = cell;
-                    tr.appendChild(td);
-                });
-                tbody.appendChild(tr);
-            });
-        });
+let tableData = [];
+let currentPage = 1;
+let rowsPerPage = 10;
+
+const emailMap = {
+    "EMAIL1@ASST.IT": "contact1@asst.it",
+    "EMAIL2@ASST.IT": "contact2@asst.it"
+};
+
+document.getElementById('searchBox').addEventListener('input', () => {
+    currentPage = 1;
+    renderTable();
+});
+
+document.getElementById('fileInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) readCSV(file);
+});
+
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.style.backgroundColor = '#f0f0f0';
+});
+dropZone.addEventListener('dragleave', () => {
+    dropZone.style.backgroundColor = '';
+});
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.style.backgroundColor = '';
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.csv')) {
+        readCSV(file);
+    } else {
+        alert("Carica un file CSV valido.");
+    }
+});
+
+function readCSV(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        const text = e.target.result;
+        parseCSV(text);
+    };
+    reader.readAsText(file);
 }
 
-document.getElementById('searchBox').addEventListener('input', function () {
-    const term = this.value.toLowerCase();
-    document.querySelectorAll('#dataTable tbody tr').forEach(row => {
-        const match = [...row.cells].some(cell => cell.textContent.toLowerCase().includes(term));
-        row.style.display = match ? '' : 'none';
+function parseCSV(csv) {
+    const lines = csv.split('\n').map(l => l.trim()).filter(l => l);
+    const headers = lines[0].split(';');
+    tableData = lines.slice(1).map(line => {
+        const cols = line.split(';');
+        return {
+            citta: cols[0] || "",
+            indirizzo: cols[1] || "",
+            servizio: cols[2] || "",
+            email: cols[3] || "",
+            presidio: cols[4] || "",
+            note: cols[5] || ""
+        };
     });
-});
+    renderTable();
+}
+
+function filterRows() {
+    const searchTerm = document.getElementById('searchBox').value.trim().toLowerCase();
+    return tableData.filter(row =>
+        Object.values(row).some(val => val.toLowerCase().includes(searchTerm))
+    );
+}
+
+function highlightMatch(text, term) {
+    if (!term) return text;
+    const regex = new RegExp(`(${term})`, 'gi');
+    return text.replace(regex, '<mark>$1</mark>');
+}
+
+function renderTable() {
+    const tbody = document.querySelector('#dataTable tbody');
+    tbody.innerHTML = '';
+    const filtered = filterRows();
+    const searchTerm = document.getElementById('searchBox').value.trim();
+    const start = (currentPage - 1) * rowsPerPage;
+    const end = start + rowsPerPage;
+    filtered.slice(start, end).forEach(row => {
+        const tr = document.createElement('tr');
+        Object.entries(row).forEach(([key, value]) => {
+            const td = document.createElement('td');
+            td.innerHTML = highlightMatch(value, searchTerm);
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+    renderPagination(filtered.length);
+}
+
+function renderPagination(totalRows) {
+    const pagination = document.querySelector('.pagination');
+    pagination.innerHTML = '';
+    const totalPages = Math.ceil(totalRows / rowsPerPage);
+    for (let i = 1; i <= totalPages; i++) {
+        const btn = document.createElement('button');
+        btn.textContent = i;
+        if (i === currentPage) btn.disabled = true;
+        btn.addEventListener('click', () => {
+            currentPage = i;
+            renderTable();
+        });
+        pagination.appendChild(btn);
+    }
+}
+
+function generatePDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text("Elenco Sedi (Filtrati)", 14, 15);
+    const filtered = filterRows();
+    const headers = ["Città", "Indirizzo", "Servizio ASST", "Email", "Presidio Fleet", "Note"];
+    const pdfData = filtered.map(row => [
+        row.citta,
+        row.indirizzo,
+        row.servizio,
+        emailMap[row.email.trim().toUpperCase()] || row.email,
+        row.presidio,
+        row.note
+    ]);
+    doc.autoTable({ head: [headers], body: pdfData, startY: 25, styles: { fontSize: 8 } });
+    doc.save("elenco_sedi_filtrati.pdf");
+}
+
+function exportCSV() {
+    const filtered = filterRows();
+    const headers = ["Città", "Indirizzo", "Servizio ASST", "Email", "Presidio Fleet", "Note"];
+    let csv = headers.join(";") + "\n";
+    filtered.forEach(row => {
+        csv += [row.citta, row.indirizzo, row.servizio, row.email, row.presidio, row.note].join(";") + "\n";
+    });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "elenco_sedi_filtrati.csv";
+    link.click();
+}
+
+function toggleDarkMode() {
+    document.body.classList.toggle('dark-mode');
+}
 </script>
 </body>
 </html>
