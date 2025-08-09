@@ -71,6 +71,12 @@ document.getElementById('searchBox').addEventListener('input', function () {
         row.style.display = match ? '' : 'none';
     });
 });
+    function highlightMatch(text, term) {
+    if (!term) return text;
+    const regex = new RegExp(`(${term})`, 'gi');
+    return text.replace(regex, '<mark>$1</mark>');
+}
 </script>
 </body>
 </html>
+
