@@ -26,7 +26,6 @@
 <h2>Elenco Sedi</h2>
 
 <!-- Casella di ricerca -->
-    
 <input type="text" id="searchBox" placeholder="🔍 Cerca..." style="margin-bottom:10px; padding:5px; width:200px;">
 
 <table id="dataTable">
@@ -70,24 +69,8 @@ document.getElementById('searchBox').addEventListener('input', function () {
     document.querySelectorAll('#dataTable tbody tr').forEach(row => {
         const match = [...row.cells].some(cell => cell.textContent.toLowerCase().includes(term));
         row.style.display = match ? '' : 'none';
-        
-        const searchTerm = document.getElementById('searchBox').value.trim();
-headers.forEach(h => {
-    let td = document.createElement('td');
-    td.innerHTML = highlightMatch(row[h.toLowerCase()] || "", searchTerm);
-    tr.appendChild(td);
-});
     });
 });
-  
-    function highlightMatch(text, term) {
-    if (!term) return text;
-    const regex = new RegExp(`(${term})`, 'gi');
-    return text.replace(regex, '<mark>$1</mark>');
-}
 </script>
 </body>
 </html>
-
-
-
